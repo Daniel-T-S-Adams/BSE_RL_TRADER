@@ -116,14 +116,13 @@ def train(total_eps: int, market_params: tuple, epsilon_start: float) :
         # Calculate returns and Transform to tensors for the neural network 
         try:
             more_inputs, more_targets = To_data_gradient_MC_with_returns(obs_list, action_list, reward_list)
+            # Add to the current data under this policy
+            inputs = torch.cat((inputs, more_inputs), 0)
+            targets = torch.cat((targets, more_targets), 0)
             
         except Exception as e:
             logger.error(f"Error using data to calculate returns and transform to tensors in episode {episode}: {e}")
             
-        
-        # Add to the current data under this policy
-        inputs = torch.cat((inputs, more_inputs), 0)
-        targets = torch.cat((targets, more_targets), 0)
 
         # If we have done the designated number of episodes for this policy evaluation,
         # retrain the network and get the new parameters.

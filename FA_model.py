@@ -75,7 +75,7 @@ def train_network(model, optimizer, criterion, inputs, targets):
 
 
 
-def normalize_data_min_max(inputs: torch.Tensor, targets: torch.Tensor) -> Tuple[torch.Tensor, torch.Tensor, Dict]:
+def normalize_data_min_max(inputs: torch.Tensor, targets: torch.Tensor=None) -> Tuple[torch.Tensor, torch.Tensor, Dict]:
     """
     Normalize inputs and targets using Min-Max normalization.
 
@@ -93,6 +93,9 @@ def normalize_data_min_max(inputs: torch.Tensor, targets: torch.Tensor) -> Tuple
     x_max, _ = torch.max(inputs, dim=0)
     inputs_normalized = (inputs - x_min) / (x_max - x_min)
 
+    if targets is None:
+        return inputs_normalized
+    
     # Normalize targets
     y_min = torch.min(targets)
     y_max = torch.max(targets)

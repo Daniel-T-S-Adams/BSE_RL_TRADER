@@ -67,7 +67,7 @@ import numpy as np
 import torch
 from torch import nn, Tensor
 from torch.optim import Adam
-from FA_model import NeuralNet
+from FA_model import NeuralNet, normalize_data_min_max
 
 # Importing Global Parameters
 from config.config_params import CONFIG
@@ -2056,7 +2056,7 @@ class RLAgent(Trader):
                     quote = self.orders[0].price * (1 - profit)
                 elif self.type == 'Seller':
                     action = random.choice(self.action_space)
-                    quote = self.orders[0].price + action
+                    # quote = self.orders[0].price + action
                        
                         
                     
@@ -2074,20 +2074,18 @@ class RLAgent(Trader):
                     max_actions = [x for x in admissible_actions if self.q_table[(obs, x)] == max_q_value]
                     # Step 4: Choose one of these actions randomly
                     action = random.choice(max_actions)
-                    # Step 5: Calculate the quote price as the cutomer price plus the action
-                    quote = self.orders[0].price + action 
-                    
+                
 
             # Check if it's a bad bid
-            if self.type == 'Buyer' and quote > self.orders[0].price:
-                quote = self.orders[0].price
+            if self.type == 'Buyer' and action > self.orders[0].price:
+                action = self.orders[0].price
             
             # Check if it's a bad ask
-            elif self.type == 'Seller' and quote < self.orders[0].price:
-                quote = self.orders[0].price
+            elif self.type == 'Seller' and action < self.orders[0].price:
+                action = self.orders[0].price
         
             # Generate the order
-            order = Order(self.tid, order_type, (quote), self.orders[0].qty, time, lob['QID'])
+            order = Order(self.tid, order_type, (action), self.orders[0].qty, time, lob['QID'])
             self.lastquote = order
 
 
@@ -2119,7 +2117,7 @@ class RLAgent(Trader):
         return None
     
 
-class Trader_DRL(RLAgent):
+class Trader_DRL(Trader):
     def __init__(
             self,
             ttype, 
@@ -2132,15 +2130,22 @@ class Trader_DRL(RLAgent):
     ):
         
         super().__init__(ttype, tid, balance, params, time)
-        # self.state_size = self.obs_space.n
         
         # self.learning_rate = learning_rate
+        self.norm_params = None
 
         self.max_order_price = bse_sys_maxprice/2
         self.max_bse_price = bse_sys_maxprice
 
         self.q_network = NeuralNet(dims=CONFIG["nn_dims"])
         self.value_optim = Adam(self.q_network.parameters(), lr=1e-3, eps=1e-3)
+
+        if self.tid[:1] == 'B':
+            self.type = 'Buyer'
+        elif self.tid[:1] == 'S':
+            self.type = 'Seller'
+        else:
+            raise ValueError("Trader should be a buyer or seller")
 
         # Check if they gave different parameters
         if type(params) is dict:
@@ -2152,8 +2157,8 @@ class Trader_DRL(RLAgent):
                 self.q_network.load_state_dict(params['neural_net'].state_dict())
             if 'epsilon' in params:
                 self.epsilon = params['epsilon']
-            # if 'norm_params' in params:
-            #     self.norm_params = params['norm_params']
+            if 'norm_params' in params:
+                self.norm_params = params['norm_params']
 
         self.action_size = len(self.action_space)
 
@@ -2161,6 +2166,13 @@ class Trader_DRL(RLAgent):
         profit_upperbound = (self.max_bse_price / self.max_order_price) - 1
         # Calculate step size based on upper bound and number of actions
         self.profit_stepsize = profit_upperbound/(self.action_size - 1)
+
+        self.old_balance = 0
+
+        # Initialize empty lists to track the state action and reward of the trader. 
+        self.states = []
+        self.actions = []
+        self.rewards = []
         
 
     def normalise_state(self, state: np.ndarray) -> np.ndarray:
@@ -2189,7 +2201,7 @@ class Trader_DRL(RLAgent):
             float: The estimated Q-value for the given state-action pair.
         """
         action_one_hot = torch.zeros(self.action_size)
-        action_one_hot[action] = 1
+        action_one_hot[int(action)] = 1
         state_action = torch.cat([state, action_one_hot])
         q_value = self.q_network(state_action.unsqueeze(0))
         return q_value.item()
@@ -2203,24 +2215,26 @@ class Trader_DRL(RLAgent):
 
             # Extract relevant features from the lob
             obs = get_observation(self.type, lob, countdown, self.orders[0].price)
-            norm_obs = self.normalise_state(obs)
+            norm_obs = normalize_data_min_max(torch.Tensor(obs), None)
             state = torch.tensor(norm_obs, dtype=torch.float32).flatten()
 
             # Use epsilon-greedy strategy for action selection
             if random.uniform(0, 1) < self.epsilon:
                 # Explore: sample a random action
-                action = random.sample(self.action_space)
+                action = random.sample(self.action_space, 1)[0]
             else:
                 # Exploit: select the action with the highest Q-value
                 q_values = [self.q_value_function(state, action) for action in self.action_space]
-                action = self.action_space[np.argmax(q_values)]
+                # action = self.action_space[np.argmax(q_values)]
+                action_array = np.flatnonzero(q_values == np.max(q_values))
+                action = random.choice(action_array)[0]
+            
 
             # # Calculate the quote based on the action
             # if self.type == 'Buyer':
             #     quote = self.orders[0].price * (1 - self.profit_stepsize * action)
             # elif self.type == 'Seller':
             #     quote = self.orders[0].price * (1 + self.profit_stepsize * action)
-
             # Check if it's a bad bid
             if self.type == 'Buyer' and action > self.orders[0].price:
                 action = self.orders[0].price
@@ -2239,6 +2253,25 @@ class Trader_DRL(RLAgent):
             self.rewards.append(reward)
 
             return order
+
+    
+    def respond(self, time, lob, trade, verbose):
+        '''
+        Function that, if the RL agent was involved in the last trade updates the reward of the last action with the profit that was made. 
+        '''
+        self.profitpertime = self.profitpertime_update(time, self.birthtime, self.balance)
+
+
+        if trade is not None:
+            # Check if the RL trader was involved in the trade
+            if trade['party1'] == self.tid or trade['party2'] == self.tid:
+                reward = self.balance - self.old_balance
+                self.rewards[-1] = reward
+
+            
+                self.old_balance = self.balance
+        
+        return None
 
 
     
@@ -2857,6 +2890,12 @@ def market_session(sess_id, starttime, endtime, trader_spec, order_schedule, dum
     # Identify the RLAgent in the traders dictionary and return its data : state, action, reward lists
     for trader_id, trader in traders.items():
         if isinstance(trader, RLAgent):  # Check if the trader is an RLAgent instance
+            rl_states = trader.states
+            rl_actions = trader.actions
+            rl_rewards = trader.rewards
+            break  # Stop searching once the RLAgent is found
+
+        if isinstance(trader, Trader_DRL):  # Check if the trader is an RLAgent instance
             rl_states = trader.states
             rl_actions = trader.actions
             rl_rewards = trader.rewards
