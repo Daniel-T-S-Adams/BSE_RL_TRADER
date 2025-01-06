@@ -163,7 +163,7 @@ def get_observation(type, lob, countdown, order):
 
 
 
-def bin_average(value, min_price=bse_sys_minprice, max_price=bse_sys_maxprice, bins=5):
+def bin_average(value, min_price=bse_sys_minprice, max_price=bse_sys_maxprice, bins=CONFIG["no._of_bins"]):
     """
     Given a value, calculates the bin it would fall into
     and returns the average of that bin.
@@ -2002,36 +2002,6 @@ class RLAgent(Trader):
         self.rewards = []
 
 
-
-    @classmethod
-    def load_q_table(self, file_path: str) -> DefaultDict[tuple, float]:
-    
-        q_table = defaultdict(lambda: 0.0)
-
-        try:
-            with open(file_path, 'r', newline='') as f:
-                reader = csv.reader(f)
-                next(reader)  # Skip the header
-
-                for row in reader:
-                    state_str, action, q_value = row
-
-                    # Parse state string as a tuple
-                    state = ast.literal_eval(state_str)  # Converts string to tuple
-
-                    # Convert action and q_value to floats
-                    action = float(action)
-                    q_value = float(q_value)
-
-                    # Create state-action pair as the dictionary key
-                    state_action_pair = (state, action)
-                    q_table[state_action_pair] = q_value
-
-        except FileNotFoundError:
-            print(f"File not found at {file_path}")
-        
-        return q_table
-
     def getorder(self, time, countdown, lob):     
         """
         function to generate the order, and also tracks the latest state, action, reward.
@@ -2052,19 +2022,15 @@ class RLAgent(Trader):
             if random.uniform(0, 1) < self.epsilon:
                 
                 if self.type == 'Buyer':
-                    profit = random.choice(self.action_space)
-                    quote = self.orders[0].price * (1 - profit)
+                    None # fill in later
                 elif self.type == 'Seller':
-                    action = random.choice(self.action_space)
-                    # quote = self.orders[0].price + action
-                       
-                        
+                    action = random.choice(self.action_space)    
                     
             # Exploit - choose the action with the highest value
             else:
                 if self.type == 'Buyer':
-                    profit = max(list(range(self.num_actions)), key = lambda x: self.q_table[(obs, x)])
-                    quote = self.orders[0].price * (1 - profit)
+                    None # fill in later
+                    
                 elif self.type == 'Seller':
                     # Step 1: Find the range of admissible actions for the customer price and BSE limits
                     admissible_actions = [x for x in self.action_space if x in range(bse_sys_maxprice - int(self.orders[0].price) + 1)]
@@ -2138,7 +2104,7 @@ class Trader_DRL(Trader):
         self.max_bse_price = bse_sys_maxprice
 
         self.q_network = NeuralNet(dims=CONFIG["nn_dims"])
-        self.value_optim = Adam(self.q_network.parameters(), lr=1e-3, eps=1e-3)
+        self.value_optim = Adam(self.q_network.parameters(), lr=1e-3, eps=1e-3) 
 
         if self.tid[:1] == 'B':
             self.type = 'Buyer'
@@ -2204,6 +2170,7 @@ class Trader_DRL(Trader):
         action_one_hot[int(action)] = 1
         state_action = torch.cat([state, action_one_hot])
         q_value = self.q_network(state_action.unsqueeze(0))
+
         return q_value.item()
 
     
@@ -2887,7 +2854,7 @@ def market_session(sess_id, starttime, endtime, trader_spec, order_schedule, dum
 
 
     
-    # Identify the RLAgent in the traders dictionary and return its data : state, action, reward lists
+    # Identify the RLAgent and Trader_DRL in the traders dictionary and return its data : state, action, reward lists
     for trader_id, trader in traders.items():
         if isinstance(trader, RLAgent):  # Check if the trader is an RLAgent instance
             rl_states = trader.states
@@ -2895,7 +2862,7 @@ def market_session(sess_id, starttime, endtime, trader_spec, order_schedule, dum
             rl_rewards = trader.rewards
             break  # Stop searching once the RLAgent is found
 
-        if isinstance(trader, Trader_DRL):  # Check if the trader is an RLAgent instance
+        if isinstance(trader, Trader_DRL):  # Check if the trader is an Trader_DRL instance
             rl_states = trader.states
             rl_actions = trader.actions
             rl_rewards = trader.rewards
