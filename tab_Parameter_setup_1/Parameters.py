@@ -20,9 +20,9 @@ CONFIG = {
     
     # Parameters for the Agent 
     "eps_per_evaluation": 1, # change to eps per GPI iter
-    "num_GPI_iter": 500,
-    "GPI_save_freq": 250,
-    "test_episodes": 500,
+    "num_GPI_iter": 5,
+    "GPI_save_freq": 5,
+    "test_episodes": 5,
     "gamma": 0.3,
     "epsilon_start": 1.0,
     "epsilon_min": 0.05,
@@ -77,11 +77,6 @@ if CONFIG['tabular']:
     
     CONFIG = CONFIG | CONFIG_tab # combine to the main dictionary
     
-    # calculate the dimension of the (state,action) space.
-    keys_to_check = ["order", "best", "worst", "average", "std", "total_orders", "time_left", "binary_flag"]
-    n_obs_features = sum(CONFIG[key] for key in keys_to_check if key in CONFIG)
-    CONFIG["n_features"] = n_obs_features + 1 # this is the length of an observation element (plus one for the action) 
-    
 
     sellers_spec = [('RL_tabular', 1, {'epsilon': CONFIG['epsilon_start'], 'action_space': CONFIG['action_space'], 'q_table_seller': CONFIG['initial q_table']}),('GVWY',19) ]
     # Loop through to find the index of the RL agent
@@ -100,21 +95,19 @@ elif CONFIG['function_approximation']:
     CONFIG_FA = {
     
     
-    "n_neurons_hl1" : 120,
-    "n_neurons_hl2" : 64,
+    # "n_neurons_hl1" : 120,
+    # "n_neurons_hl2" : 64,
     
     # Observation space 
     "order" : True, # this will always be true
-    "best": True,
-    "worst": True,
-    "average": True,
-    "std": True,
+    "best": False,
+    "worst": False,
+    "average": False,
+    "std": False,
     "total_orders": True,
     "time_left": True, 
     "binary_flag" : True,
     
-           
-        
     
     ### file paths
     'weights':  os.path.join('FA_' + CONFIG["setup"], 'weights_and_biases'),
@@ -122,9 +115,22 @@ elif CONFIG['function_approximation']:
      # Full path for the Parameters.py file (inside the setup_1 folder)
     'parameters' : os.path.join('FA_' + CONFIG["setup"], 'Parameters.py'),
    }
+    
+    # calculate the dimension of the (state,action) space.
+    keys_to_check = ["order", "best", "worst", "average", "std", "total_orders", "time_left", "binary_flag"]
+    n_obs_features = sum(CONFIG[key] for key in keys_to_check if key in CONFIG)
+    CONFIG["n_features"] = n_obs_features + 1 # this is the length of an observation element (plus 1 for action) 
+
+    CONFIG["nn_dims"] = (CONFIG["n_features"], 64, 32, 1)
+
     CONFIG = CONFIG | CONFIG_FA # combine to the main dictionary
     
-    sellers_spec = [('GVWY',19), ('RL_FA', 1, {'epsilon': CONFIG['epsilon_start'], 'action_space': CONFIG['action_space'], 'neural_net': 'placeholder to be initialised later'})]
+    sellers_spec = [('GVWY',19), ('RL_FA', 1, {'epsilon': CONFIG['epsilon_start'], 'action_space': CONFIG['action_space'],'norm_params': {
+        "x_min": 0,
+        "x_max": 1,
+        "y_min": 0,
+        "y_max": 1,
+    }})]
     # Loop through to find the index of the RL agent
     for i, seller in enumerate(sellers_spec):
         if seller[0] == 'RL_FA':  # Check if the first element matches 'RL_FA'
@@ -133,6 +139,7 @@ elif CONFIG['function_approximation']:
     
     
     
+
     
     
     

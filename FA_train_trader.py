@@ -70,7 +70,9 @@ def To_data_gradient_MC_with_returns(
     # Step 3: Convert to PyTorch tensors
     x_tensor = torch.tensor(processed, dtype=torch.float)
     y_tensor = torch.tensor(G, dtype=torch.float)  # Use the computed returns as targets
+    y_tensor = y_tensor.unsqueeze(1)  # Converts shape to 2D
 
+    
     return x_tensor, y_tensor
 
 
@@ -114,11 +116,18 @@ def train(total_eps: int, market_params: tuple, epsilon_start: float) :
         obs_list, action_list, reward_list = market_session(*market_params)
        
         # Calculate returns and Transform to tensors for the neural network 
+        
         try:
-            more_inputs, more_targets = To_data_gradient_MC_with_returns(obs_list, action_list, reward_list)
+            more_inputs, more_targets = To_data_gradient_MC_with_returns(obs_list, action_list, reward_list)    
             # Add to the current data under this policy
+            print(f"more_inputs shape: {more_inputs.shape}")
+            print(f"more_targets shape: {more_targets.shape}")
+            print(f"inputs shape before concat: {inputs.shape}")
+            print(f"targets shape before concat: {targets.shape}")
+
             inputs = torch.cat((inputs, more_inputs), 0)
             targets = torch.cat((targets, more_targets), 0)
+            
             
         except Exception as e:
             logger.error(f"Error using data to calculate returns and transform to tensors in episode {episode}: {e}")
@@ -129,13 +138,14 @@ def train(total_eps: int, market_params: tuple, epsilon_start: float) :
         if episode % CONFIG["eps_per_evaluation"] == 0: 
             # Normalize the data before training 
             try:
-                inputs, targets, normparams = normalize_data_min_max(inputs, targets)
+                inputs, targets, normparams = normalize_data_min_max(inputs, targets) # normalises both the state and the action together as inputs, and then the return as targets
+                
             except Exception as e:
                 logger.error(f"Error normalizing data in GPI iter {GPI_iter}: {e}")
                 
             # Retrain the network 
             try:
-                train_network(neural_network, inputs, targets, criterion, optimizer)
+                train_network(neural_network, optimizer, criterion, inputs, targets)
             except Exception as e:
                 logger.error(f"Error training in GPI iter {GPI_iter}: {e}")
             

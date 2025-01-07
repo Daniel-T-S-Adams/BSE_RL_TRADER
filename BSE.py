@@ -139,6 +139,7 @@ def get_observation(type, lob, countdown, order):
     if CONFIG['average']:
         observation.extend([float(lob['bids']['lob']), float(lob['asks']['lob'])])
         
+        
     if CONFIG['std']:
         std_bid = calc_weighted_std_np(lob['bids']['lob'])
         std_ask = calc_weighted_std_np(lob['asks']['lob'])
@@ -159,71 +160,10 @@ def get_observation(type, lob, countdown, order):
     if CONFIG['binary_flag']:
         observation.extend([0 if lob['bids']['n'] == 0 else 1, 0 if lob['asks']['n'] == 0 else 1])
     
-    return tuple(observation)  # Convert list to tuple
-
-
-
-def bin_average(value, min_price=bse_sys_minprice, max_price=bse_sys_maxprice, bins=CONFIG["no._of_bins"]):
-    """
-    Given a value, calculates the bin it would fall into
-    and returns the average of that bin.
-
-    :param value (int): The value that is to be mapped to a bin.
-    :param min_price (int): The minimum value allowed.
-    :param max_price (int): The maximum value allowed.
-    :param bins (int): The total number of bins.
-    """
-    if value is None:
-        value = 0.0
-
-    # Calculate bin width
-    bin_width = (max_price - min_price) / bins
-
-    # Determine the bin index for the value
-    bin_index = int((value - min_price) / bin_width)
-
-    # Ensure the value is placed in the last bin if it falls on max_price
-    if bin_index == bins:
-        bin_index -= 1
-
-    # Calculate the average of the bin range
-    bin_start = min_price + bin_index * bin_width
-    bin_end = bin_start + bin_width
-    bin_average = (bin_start + bin_end) / 2
-
-    return int(bin_average)
-
-
-def get_discrete_observation(type, lob, countdown, order):
-    # this function needs generalising for more observations we will need more bin functions for different bounds.
-    
-    if CONFIG['best']:
-        best_bid = bin_average(lob['bids']['best'])
-        best_ask = bin_average(lob['asks']['best'])
-            
-    if CONFIG['worst'] :
-        worst_bid = bin_average(lob['bids']['worst'])
-        worst_ask = bin_average(lob['asks']['worst'])
-    
-    if CONFIG['average'] :
-        avg_bid = bin_average(calc_average_price_np(lob['bids']['lob']))    
-        avg_ask = bin_average(calc_average_price_np(lob['asks']['lob']))
-        
-    if CONFIG['std'] :
-        std_bid = bin_average(calc_weighted_std_np(lob['bids']['lob']))
-        std_ask = bin_average(calc_weighted_std_np(lob['asks']['lob']))
-    
-    order = bin_average(order)
-    # Map type to a numeric code
-    type_code = 1 if type == 'Seller' else 0  # Adjust as needed for other types
-
-    if not (0 <= countdown <= 1):
-        raise ValueError("countdown should be between 0 and 1 inclusive.")
-    
-    # create as a tuple
-    observation = (type_code, float(order), float(best_bid), float(best_ask))
     
     return observation
+
+
 
 
 # an Order/quote has a trader id, a type (buy/sell) price, quantity, timestamp, and unique i.d.
@@ -2002,6 +1942,67 @@ class RLAgent(Trader):
         self.rewards = []
 
 
+    def bin_average(self, value, min_price=bse_sys_minprice, max_price=bse_sys_maxprice, bins=CONFIG["no._of_bins"]):
+        """
+        Given a value, calculates the bin it would fall into
+        and returns the average of that bin.
+
+        :param value (int): The value that is to be mapped to a bin.
+        :param min_price (int): The minimum value allowed.
+        :param max_price (int): The maximum value allowed.
+        :param bins (int): The total number of bins.
+        """
+        if value is None:
+            value = 0.0
+
+        # Calculate bin width
+        bin_width = (max_price - min_price) / bins
+
+        # Determine the bin index for the value
+        bin_index = int((value - min_price) / bin_width)
+
+        # Ensure the value is placed in the last bin if it falls on max_price
+        if bin_index == bins:
+            bin_index -= 1
+
+        # Calculate the average of the bin range
+        bin_start = min_price + bin_index * bin_width
+        bin_end = bin_start + bin_width
+        bin_average = (bin_start + bin_end) / 2
+
+        return int(bin_average)
+
+    def get_discrete_observation(self, type, lob, countdown, order):
+        # this function needs generalising for more observations we will need more bin functions for different bounds.
+        
+        if CONFIG['best']:
+            best_bid = self.bin_average(lob['bids']['best'])
+            best_ask = self.bin_average(lob['asks']['best'])
+                
+        if CONFIG['worst']:
+            worst_bid = self.bin_average(lob['bids']['worst'])
+            worst_ask = self.bin_average(lob['asks']['worst'])
+        
+        if CONFIG['average']:
+            avg_bid = self.bin_average(calc_average_price_np(lob['bids']['lob']))    
+            avg_ask = self.bin_average(calc_average_price_np(lob['asks']['lob']))
+            
+        if CONFIG['std']:
+            std_bid = self.bin_average(calc_weighted_std_np(lob['bids']['lob']))
+            std_ask = self.bin_average(calc_weighted_std_np(lob['asks']['lob']))
+        
+        order = self.bin_average(order)
+        # Map type to a numeric code
+        type_code = 1 if type == 'Seller' else 0  # Adjust as needed for other types
+
+        if not (0 <= countdown <= 1):
+            raise ValueError("countdown should be between 0 and 1 inclusive.")
+        
+        # create as a tuple
+        observation = (type_code, float(order), float(best_bid), float(best_ask))
+        
+        return observation
+    
     def getorder(self, time, countdown, lob):     
         """
         function to generate the order, and also tracks the latest state, action, reward.
@@ -2017,7 +2018,7 @@ class RLAgent(Trader):
         else:
             order_type = self.orders[0].otype
             # return the best action following an epsilon-greedy policy
-            obs = get_discrete_observation(self.type, lob, countdown, self.orders[0].price)
+            obs = self.get_discrete_observation(self.type, lob, countdown, self.orders[0].price)
             # Explore - sample a random action
             if random.uniform(0, 1) < self.epsilon:
                 
@@ -2135,21 +2136,23 @@ class Trader_DRL(Trader):
 
     def q_value_function(self, state, action):
         """
-        Compute the Q-value for a given state-action pair using the Q-network.
+        Compute the Q-value for a given state-action pair using the Q-network. 
+        This function normalises the state and action together as inputs, and then passes them through the network.
 
         Args:
-            state (torch.Tensor): A tensor representing the current state. 
+            state (list): A list representing the current state. 
                         The shape should be compatible with the input of the Q-network.
-            action (int): The index representing the action taken. 
-                        Should be an integer in the range [0, action_size-1].
+            action (int): The action taken. 
+                        
 
         Returns:
             float: The estimated Q-value for the given state-action pair.
         """
-        action_one_hot = torch.zeros(self.action_size)  # create zeros for one hot encoding
-        action_one_hot[int(action)] = 1                 # insert 1 at the index of the action
-        state_action = torch.cat([state, action_one_hot]) # concatenate the state and the one hot encoded action
-        q_value = self.q_network(state_action.unsqueeze(0)) # pass the state-action pair through the network
+        state = torch.tensor(state, dtype=torch.float32).flatten()
+        action = torch.tensor(action, dtype=torch.float32)
+        state_action = torch.cat([state, action.unsqueeze(0)]) # concatenate the state and the action
+        norm_state_action = (state_action - self.norm_params['x_min']) / (self.norm_params['x_max'] - self.norm_params['x_min']) # normalise them 
+        q_value = self.q_network(norm_state_action.unsqueeze(0)) # pass the normalised state-action pair through the network
 
         return q_value.item()
 
@@ -2160,11 +2163,8 @@ class Trader_DRL(Trader):
         else:
             order_type = self.orders[0].otype
 
-            # get the observation and normalise it using the min and max normalisation parameters
+            # get the observation 
             obs = get_observation(self.type, lob, countdown, self.orders[0].price)
-            norm_obs = (torch.Tensor(obs) - self.norm_params['x_min']) / (self.norm_params['x_max'] - self.norm_params['x_min'])
-            
-            state = torch.tensor(norm_obs, dtype=torch.float32).flatten()
 
             # Use epsilon-greedy strategy for action selection
             if random.uniform(0, 1) < self.epsilon:
@@ -2172,17 +2172,14 @@ class Trader_DRL(Trader):
                 action = random.sample(self.action_space, 1)[0]
             else:
                 # Exploit: select the action with the highest Q-value
-                q_values = [self.q_value_function(state, action) for action in self.action_space]
-                # action = self.action_space[np.argmax(q_values)]
+                q_values = [self.q_value_function(obs, action) for action in self.action_space]
+                print(self.action_space)
+                print(obs)
+                print(q_values)
                 action_array = np.flatnonzero(q_values == np.max(q_values))
-                action = random.choice(action_array)[0]
+                action = random.choice(action_array)
             
-
-            # # Calculate the quote based on the action
-            # if self.type == 'Buyer':
-            #     quote = self.orders[0].price * (1 - self.profit_stepsize * action)
-            # elif self.type == 'Seller':
-            #     quote = self.orders[0].price * (1 + self.profit_stepsize * action)
+            
             # Check if it's a bad bid
             if self.type == 'Buyer' and action > self.orders[0].price:
                 action = self.orders[0].price
