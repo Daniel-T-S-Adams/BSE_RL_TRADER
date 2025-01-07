@@ -2097,14 +2097,6 @@ class Trader_DRL(Trader):
         
         super().__init__(ttype, tid, balance, params, time)
         
-        # self.learning_rate = learning_rate
-        self.norm_params = None
-
-        self.max_order_price = bse_sys_maxprice/2
-        self.max_bse_price = bse_sys_maxprice
-
-        self.q_network = NeuralNet(dims=CONFIG["nn_dims"])
-        self.value_optim = Adam(self.q_network.parameters(), lr=1e-3, eps=1e-3) 
 
         if self.tid[:1] == 'B':
             self.type = 'Buyer'
@@ -2113,14 +2105,17 @@ class Trader_DRL(Trader):
         else:
             raise ValueError("Trader should be a buyer or seller")
 
+        
+        
+        
+        # initialise a neural network with correct dimensions
+        self.q_network = NeuralNet(dims=CONFIG["nn_dims"]) 
         # Check if they gave different parameters
         if type(params) is dict:
             if 'action_space' in params:
                 self.action_space = params['action_space']
-            # if 'max_order_price' in params:
-            #     self.max_order_price = params['max_order_price']
             if 'value_func' in params:
-                self.q_network.load_state_dict(params['neural_net'].state_dict())
+                self.q_network.load_state_dict(params['neural_net'].state_dict()) # load the weights from the neural network
             if 'epsilon' in params:
                 self.epsilon = params['epsilon']
             if 'norm_params' in params:
@@ -2128,10 +2123,6 @@ class Trader_DRL(Trader):
 
         self.action_size = len(self.action_space)
 
-        # Calculate the allowed upper bound for the profit margin
-        profit_upperbound = (self.max_bse_price / self.max_order_price) - 1
-        # Calculate step size based on upper bound and number of actions
-        self.profit_stepsize = profit_upperbound/(self.action_size - 1)
 
         self.old_balance = 0
 
@@ -2140,17 +2131,6 @@ class Trader_DRL(Trader):
         self.actions = []
         self.rewards = []
         
-
-    def normalise_state(self, state: np.ndarray) -> np.ndarray:
-        """
-        Normalises the current state using the mean and 
-        standard deviation of the training data.
-        """
-        if self.norm_params is None:
-            return state
-        
-        mean, std = self.norm_params
-        return (state - mean) / std
     
 
     def q_value_function(self, state, action):
@@ -2166,10 +2146,10 @@ class Trader_DRL(Trader):
         Returns:
             float: The estimated Q-value for the given state-action pair.
         """
-        action_one_hot = torch.zeros(self.action_size)
-        action_one_hot[int(action)] = 1
-        state_action = torch.cat([state, action_one_hot])
-        q_value = self.q_network(state_action.unsqueeze(0))
+        action_one_hot = torch.zeros(self.action_size)  # create zeros for one hot encoding
+        action_one_hot[int(action)] = 1                 # insert 1 at the index of the action
+        state_action = torch.cat([state, action_one_hot]) # concatenate the state and the one hot encoded action
+        q_value = self.q_network(state_action.unsqueeze(0)) # pass the state-action pair through the network
 
         return q_value.item()
 
@@ -2180,9 +2160,10 @@ class Trader_DRL(Trader):
         else:
             order_type = self.orders[0].otype
 
-            # Extract relevant features from the lob
+            # get the observation and normalise it using the min and max normalisation parameters
             obs = get_observation(self.type, lob, countdown, self.orders[0].price)
-            norm_obs = normalize_data_min_max(torch.Tensor(obs), None)
+            norm_obs = (torch.Tensor(obs) - self.norm_params['x_min']) / (self.norm_params['x_max'] - self.norm_params['x_min'])
+            
             state = torch.tensor(norm_obs, dtype=torch.float32).flatten()
 
             # Use epsilon-greedy strategy for action selection

@@ -119,13 +119,18 @@ elif CONFIG['function_approximation']:
     # calculate the dimension of the (state,action) space.
     keys_to_check = ["order", "best", "worst", "average", "std", "total_orders", "time_left", "binary_flag"]
     n_obs_features = sum(CONFIG[key] for key in keys_to_check if key in CONFIG)
-    CONFIG["n_features"] = n_obs_features + 1 # this is the length of an observation element (plus one for the action) 
+    CONFIG["n_features"] = n_obs_features + len(CONFIG['action_space']) # this is the length of an observation element (plus number of actions for one hot encoding) 
 
     CONFIG["nn_dims"] = (CONFIG["n_features"], 64, 32, 1)
 
     CONFIG = CONFIG | CONFIG_FA # combine to the main dictionary
     
-    sellers_spec = [('GVWY',19), ('RL_FA', 1, {'epsilon': CONFIG['epsilon_start'], 'action_space': CONFIG['action_space']})]
+    sellers_spec = [('GVWY',19), ('RL_FA', 1, {'epsilon': CONFIG['epsilon_start'], 'action_space': CONFIG['action_space'],'norm_params': {
+        "x_min": 0,
+        "x_max": 1,
+        "y_min": 0,
+        "y_max": 1,
+    }})]
     # Loop through to find the index of the RL agent
     for i, seller in enumerate(sellers_spec):
         if seller[0] == 'RL_FA':  # Check if the first element matches 'RL_FA'
