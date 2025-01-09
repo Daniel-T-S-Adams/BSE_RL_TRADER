@@ -101,6 +101,7 @@ def train(total_eps: int, market_params: tuple, epsilon_start: float) :
     # initialise the data as tensors for pytorch.
     inputs = torch.empty((0, CONFIG["n_features"]), dtype=torch.float32)
     targets = torch.empty((0, 1), dtype=torch.float32)
+    normparams = {"x_min": 0, "x_max": 1, "y_min": 0, "y_max": 1}
     
     # initialise the model
     neural_network = NeuralNet(dims=CONFIG["nn_dims"])

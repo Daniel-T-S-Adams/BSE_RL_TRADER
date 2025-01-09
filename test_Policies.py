@@ -140,7 +140,7 @@ def Test_all_policies(GPI_test_freq: int, num_GPI_iters: int, market_params: tup
             # If the model was saved on a GPU and is now being loaded on a CPU (or vice versa), you'll need to specify the map_location parameter in torch.load() to handle this.
             #
             # Initialize the network architecture
-            neural_net = NeuralNet()
+            neural_net = NeuralNet(dims=CONFIG["nn_dims"])
             # Path to the saved newtork
             neural_net_string = os.path.join(CONFIG["weights"], f'network_at_GPI_{GPI_iter}.pth')
             logger.info(f"Using neural network: {neural_net_string}")

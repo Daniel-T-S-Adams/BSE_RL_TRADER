@@ -127,44 +127,6 @@ def calc_weighted_std_np(data):
 
     return weighted_std
 
-def get_observation(type, lob, countdown, order):
-    observation = []  # List to store active observation values
-
-    if CONFIG['best']:
-        observation.extend([float(lob['bids']['best']), float(lob['asks']['best'])])
-            
-    if CONFIG['worst']:
-        observation.extend([float(lob['bids']['worst']), float(lob['asks']['worst'])])
-    
-    if CONFIG['average']:
-        observation.extend([float(lob['bids']['lob']), float(lob['asks']['lob'])])
-        
-        
-    if CONFIG['std']:
-        std_bid = calc_weighted_std_np(lob['bids']['lob'])
-        std_ask = calc_weighted_std_np(lob['asks']['lob'])
-        observation.extend([float(std_bid), float(std_ask)])
-        
-    if CONFIG['order']:
-        type_code = 1 if type == 'Seller' else 0
-        observation.extend([type_code, float(order)])
-
-    if CONFIG['total_orders']:
-        observation.extend([float(lob['bids']['n']), float(lob['asks']['n'])])
-        
-    if CONFIG['time_left']:
-        if not (0 <= countdown <= 1):
-            raise ValueError("countdown should be between 0 and 1 inclusive.")
-        observation.append(float(countdown))
-        
-    if CONFIG['binary_flag']:
-        observation.extend([0 if lob['bids']['n'] == 0 else 1, 0 if lob['asks']['n'] == 0 else 1])
-    
-    
-    return observation
-
-
-
 
 # an Order/quote has a trader id, a type (buy/sell) price, quantity, timestamp, and unique i.d.
 class Order:
@@ -2106,9 +2068,7 @@ class Trader_DRL(Trader):
         else:
             raise ValueError("Trader should be a buyer or seller")
 
-        
-        
-        
+
         # initialise a neural network with correct dimensions
         self.q_network = NeuralNet(dims=CONFIG["nn_dims"]) 
         # Check if they gave different parameters
@@ -2123,8 +2083,6 @@ class Trader_DRL(Trader):
                 self.norm_params = params['norm_params']
 
         self.action_size = len(self.action_space)
-
-
         self.old_balance = 0
 
         # Initialize empty lists to track the state action and reward of the trader. 
@@ -2133,6 +2091,41 @@ class Trader_DRL(Trader):
         self.rewards = []
         
     
+    def get_observation(self, type, lob, countdown, order):
+        observation = []  # List to store active observation values
+
+        if CONFIG['best']:
+            observation.extend([float(lob['bids']['best']), float(lob['asks']['best'])])
+                
+        if CONFIG['worst']:
+            observation.extend([float(lob['bids']['worst']), float(lob['asks']['worst'])])
+        
+        if CONFIG['average']:
+            observation.extend([float(lob['bids']['lob']), float(lob['asks']['lob'])])
+            
+        if CONFIG['std']:
+            std_bid = calc_weighted_std_np(lob['bids']['lob'])
+            std_ask = calc_weighted_std_np(lob['asks']['lob'])
+            observation.extend([float(std_bid), float(std_ask)])
+            
+        if CONFIG['order']:
+            type_code = 1 if type == 'Seller' else 0
+            observation.extend([type_code, float(order)])
+
+        if CONFIG['total_orders']:
+            observation.extend([float(lob['bids']['n']), float(lob['asks']['n'])])
+            
+        if CONFIG['time_left']:
+            if not (0 <= countdown <= 1):
+                raise ValueError("countdown should be between 0 and 1 inclusive.")
+            observation.append(float(countdown))
+            
+        if CONFIG['binary_flag']:
+            observation.extend([0 if lob['bids']['n'] == 0 else 1, 0 if lob['asks']['n'] == 0 else 1])
+        
+        
+        return observation
+
 
     def q_value_function(self, state, action):
         """
@@ -2151,9 +2144,14 @@ class Trader_DRL(Trader):
         state = torch.tensor(state, dtype=torch.float32).flatten()
         action = torch.tensor(action, dtype=torch.float32)
         state_action = torch.cat([state, action.unsqueeze(0)]) # concatenate the state and the action
-        norm_state_action = (state_action - self.norm_params['x_min']) / (self.norm_params['x_max'] - self.norm_params['x_min']) # normalise them 
-        q_value = self.q_network(norm_state_action.unsqueeze(0)) # pass the normalised state-action pair through the network
 
+        denominator = self.norm_params['x_max'] - self.norm_params['x_min']
+
+        # Add a small constant to avoid division by zero
+        denominator = torch.where(denominator == 0, torch.tensor(1e-8, dtype=denominator.dtype), denominator)
+
+        norm_state_action = (state_action - self.norm_params['x_min']) / denominator
+        q_value = self.q_network(norm_state_action.unsqueeze(0)) # pass the normalised state-action pair through the network
         return q_value.item()
 
     
@@ -2164,7 +2162,7 @@ class Trader_DRL(Trader):
             order_type = self.orders[0].otype
 
             # get the observation 
-            obs = get_observation(self.type, lob, countdown, self.orders[0].price)
+            obs = self.get_observation(self.type, lob, countdown, self.orders[0].price)
 
             # Use epsilon-greedy strategy for action selection
             if random.uniform(0, 1) < self.epsilon:
@@ -2173,9 +2171,6 @@ class Trader_DRL(Trader):
             else:
                 # Exploit: select the action with the highest Q-value
                 q_values = [self.q_value_function(obs, action) for action in self.action_space]
-                print(self.action_space)
-                print(obs)
-                print(q_values)
                 action_array = np.flatnonzero(q_values == np.max(q_values))
                 action = random.choice(action_array)
             
