@@ -77,7 +77,7 @@ def train_network(model, optimizer, criterion, inputs, targets):
 
 def normalize_data_min_max(inputs: torch.Tensor, targets: torch.Tensor) -> Tuple[torch.Tensor, torch.Tensor, Dict]:
     """
-    Normalize inputs and targets using Min-Max normalization.
+    Normalize inputs and targets using Min-Max normalization. If Max = Min it replaces max - min with epsilon
 
     Parameters:
         inputs (torch.Tensor): Input tensor of shape (batch_size, input_size).
@@ -91,19 +91,24 @@ def normalize_data_min_max(inputs: torch.Tensor, targets: torch.Tensor) -> Tuple
     # Normalize inputs
     x_min, _ = torch.min(inputs, dim=0)
     x_max, _ = torch.max(inputs, dim=0)
-    inputs_normalized = (inputs - x_min) / (x_max - x_min)
+    x_range = x_max - x_min  
+    epsilon = 1e-4
+    x_range[x_range == 0] = epsilon  # if this takes too long we could try just adding epsilon to the range.
+    inputs_normalized = (inputs - x_min) / (x_range)
     
     # Normalize targets
     y_min = torch.min(targets)
     y_max = torch.max(targets)
-    targets_normalized = (targets - y_min) / (y_max - y_min)
+    y_range = y_max - y_min
+    y_range[y_range == 0] = epsilon
+    targets_normalized = (targets - y_min) / (y_range)
 
     # Save normalization parameters for reversing
     normalization_params = {
         "x_min": x_min,
-        "x_max": x_max,
+        "x_range": x_range,
         "y_min": y_min,
-        "y_max": y_max,
+        "y_range": y_range,
     }
 
     return inputs_normalized, targets_normalized, normalization_params

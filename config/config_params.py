@@ -19,10 +19,10 @@ CONFIG = {
     'function_approximation': True,
     
     # Parameters for the Agent 
-    "eps_per_evaluation": 1, # change to eps per GPI iter
-    "num_GPI_iter": 5,
-    "GPI_save_freq": 5,
-    "test_episodes": 5,
+    "eps_per_evaluation": 500, # change to eps per GPI iter
+    "num_GPI_iter": 20,
+    "GPI_save_freq": 2,
+    "test_episodes": 500,
     "gamma": 0.3,
     "epsilon_start": 1.0,
     "epsilon_min": 0.05,
@@ -109,7 +109,7 @@ elif CONFIG['function_approximation']:
     "std": False,     # 2, for ask and bid 
     "total_orders": True, # 2, for ask and bid,
     "time_left": True,    # 1
-    "binary_flag" : True, # 2, for ask and bid
+    "binary_flag" : False, # 2, for ask and bid (turned off because we cant handle binary )
     
     
     ### file paths

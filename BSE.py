@@ -2081,6 +2081,7 @@ class Trader_DRL(Trader):
                 self.epsilon = params['epsilon']
             if 'norm_params' in params:
                 self.norm_params = params['norm_params']
+                
 
         self.action_size = len(self.action_space)
         self.old_balance = 0
@@ -2144,13 +2145,7 @@ class Trader_DRL(Trader):
         state = torch.tensor(state, dtype=torch.float32).flatten()
         action = torch.tensor(action, dtype=torch.float32)
         state_action = torch.cat([state, action.unsqueeze(0)]) # concatenate the state and the action
-
-        denominator = self.norm_params['x_max'] - self.norm_params['x_min']
-
-        # Add a small constant to avoid division by zero
-        denominator = torch.where(denominator == 0, torch.tensor(1e-8, dtype=denominator.dtype), denominator)
-
-        norm_state_action = (state_action - self.norm_params['x_min']) / denominator
+        norm_state_action = (state_action - self.norm_params['x_min']) / self.norm_params['x_range']
         q_value = self.q_network(norm_state_action.unsqueeze(0)) # pass the normalised state-action pair through the network
         return q_value.item()
 

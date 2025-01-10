@@ -101,13 +101,14 @@ def train(total_eps: int, market_params: tuple, epsilon_start: float) :
     # initialise the data as tensors for pytorch.
     inputs = torch.empty((0, CONFIG["n_features"]), dtype=torch.float32)
     targets = torch.empty((0, 1), dtype=torch.float32)
-    normparams = {"x_min": 0, "x_max": 1, "y_min": 0, "y_max": 1}
+    normparams = {"x_min": torch.zeros(CONFIG["n_features"]), "x_range": torch.ones(CONFIG["n_features"]), "y_min": torch.zeros(1), "y_range": torch.ones(1)}
     
     # initialise the model
     neural_network = NeuralNet(dims=CONFIG["nn_dims"])
     optimizer = optim.Adam(neural_network.parameters(), lr=0.001)
     criterion = nn.MSELoss()
     # initialise the neural network
+    print(f"norm params start as {normparams}")
     market_params[3]['sellers'][CONFIG['rl_index']][2]['neural_net'] = neural_network
     
     ## Run the GPI iterations: ##
@@ -115,32 +116,28 @@ def train(total_eps: int, market_params: tuple, epsilon_start: float) :
     for episode in range(1, total_eps + 1):
         # Run the market session once, it returns a list of observations, actions and rewards for the RL trader 
         obs_list, action_list, reward_list = market_session(*market_params)
+        if obs_list :
        
-        # Calculate returns and Transform to tensors for the neural network 
+            # Calculate returns and Transform to tensors for the neural network 
+            
+            try:
+                more_inputs, more_targets = To_data_gradient_MC_with_returns(obs_list, action_list, reward_list)    
+                # Add to the current data under this policy
+
+                inputs = torch.cat((inputs, more_inputs), 0)
+                targets = torch.cat((targets, more_targets), 0)
+                
+                
+            except Exception as e:
+                logger.error(f"Error using data to calculate returns and transform to tensors in episode {episode}: {e}")
         
-        try:
-            more_inputs, more_targets = To_data_gradient_MC_with_returns(obs_list, action_list, reward_list)    
-            # Add to the current data under this policy
-            print(f"more_inputs shape: {more_inputs.shape}")
-            print(f"more_targets shape: {more_targets.shape}")
-            print(f"inputs shape before concat: {inputs.shape}")
-            print(f"targets shape before concat: {targets.shape}")
-
-            inputs = torch.cat((inputs, more_inputs), 0)
-            targets = torch.cat((targets, more_targets), 0)
-            
-            
-        except Exception as e:
-            logger.error(f"Error using data to calculate returns and transform to tensors in episode {episode}: {e}")
-            
-
         # If we have done the designated number of episodes for this policy evaluation,
         # retrain the network and get the new parameters.
         if episode % CONFIG["eps_per_evaluation"] == 0: 
             # Normalize the data before training 
             try:
                 inputs, targets, normparams = normalize_data_min_max(inputs, targets) # normalises both the state and the action together as inputs, and then the return as targets
-                
+                print(f"iter {GPI_iter} norm param range input: {normparams['x_range']} target: {normparams['y_range']}")
             except Exception as e:
                 logger.error(f"Error normalizing data in GPI iter {GPI_iter}: {e}")
                 
